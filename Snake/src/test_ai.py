@@ -1,15 +1,16 @@
 import pygame
 import torch
 import sys
+import os
+import numpy as np
 from model import SnakeNet
 from snake_env import SnakeAIEnv
+from config import (
+    ROWS, COLS, CELL_SIZE, FPS,
+    MODEL_BEST_PATH, VERBOSE
+)
 
-# --- impostazioni griglia ---
-ROWS = 15
-COLS = 17
-CELL_SIZE = 40
-
-# colori
+# Colori
 BLACK = (0, 0, 0)
 GRAY = (50, 50, 50)
 DARK_GREEN = (0, 180, 0)
@@ -19,51 +20,37 @@ DARK_RED = (200, 0, 0)
 WHITE = (255, 255, 255)
 YELLOW = (255, 255, 0)
 
-# Inizializza pygame
+# Pygame
 pygame.init()
 screen = pygame.display.set_mode((COLS * CELL_SIZE, ROWS * CELL_SIZE + 60))
 pygame.display.set_caption("Snake AI Test")
 font = pygame.font.Font(None, 36)
 small_font = pygame.font.Font(None, 24)
-
 clock = pygame.time.Clock()
-FPS = 5
 
 # Device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Carica il modello
-print("Caricamento modello...")
+# Carica modello
+if VERBOSE:
+    print("Caricamento modello...")
 try:
     model = SnakeNet().to(device)
-    model.load("snake_model_best.pt")
+    model.load(MODEL_BEST_PATH, device)
     model.eval()
-    print("✓ Modello caricato con successo!")
-except:
-    print("✗ Impossibile caricare il modello. Assicurati che snake_model_best.pt esista.")
-    print("Allena prima il modello con: python train.py")
+    if VERBOSE:
+        print(f"✓ Modello caricato!")
+except Exception as e:
+    print(f"✗ Errore: {e}")
     pygame.quit()
     sys.exit()
 
-# Ambiente di gioco
 env = SnakeAIEnv(ROWS, COLS)
 
-def direction_to_delta(direction):
-    """Converte direzione (0,1) in (row_delta, col_delta) di pygame"""
-    if direction == (0, 1):
-        return "RIGHT"
-    elif direction == (0, -1):
-        return "LEFT"
-    elif direction == (1, 0):
-        return "DOWN"
-    elif direction == (-1, 0):
-        return "UP"
-
-def draw_game(env, total_score, episode):
+def draw_game(env, episode):
     """Disegna il gioco"""
     screen.fill(BLACK)
     
-    # Disegna griglia
     for r in range(env.rows):
         for c in range(env.cols):
             rect = pygame.Rect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE)
@@ -78,16 +65,12 @@ def draw_game(env, total_score, episode):
                     pygame.draw.rect(screen, DARK_GREEN, rect)
             elif (r, c) == env.apple:
                 pygame.draw.rect(screen, RED, rect)
-                pygame.draw.circle(
-                    screen,
-                    DARK_RED,
+                pygame.draw.circle(screen, DARK_RED,
                     (c * CELL_SIZE + CELL_SIZE // 2, r * CELL_SIZE + CELL_SIZE // 2),
-                    CELL_SIZE // 4
-                )
+                    CELL_SIZE // 4)
             
             pygame.draw.rect(screen, GRAY, rect, 1)
     
-    # HUD
     hud_rect = pygame.Rect(0, ROWS * CELL_SIZE, COLS * CELL_SIZE, 60)
     pygame.draw.rect(screen, DARK_GREEN, hud_rect)
     pygame.draw.line(screen, WHITE, (0, ROWS * CELL_SIZE), (COLS * CELL_SIZE, ROWS * CELL_SIZE), 2)
@@ -100,14 +83,14 @@ def draw_game(env, total_score, episode):
     
     pygame.display.flip()
 
-# Testing loop
+# Test loop
 running = True
 total_score = 0
 episode = 0
 best_score = 0
 
-print("\nInizio test AI...")
-print("Premi ESC per uscire\n")
+if VERBOSE:
+    print("\nInizio test... (ESC per uscire)\n")
 
 while running:
     state = env.reset()
@@ -115,7 +98,6 @@ while running:
     episode += 1
     
     while not done:
-        # Controlla input
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -125,21 +107,17 @@ while running:
                     running = False
                     done = True
         
-        # Predizione AI
-        state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
+        state_tensor = torch.tensor(np.array([state]), dtype=torch.float32).to(device)
         with torch.no_grad():
             q_values = model(state_tensor)
             action = q_values.argmax(1).item()
         
-        # Esegui azione
         next_state, reward, done = env.step(action)
         state = next_state
         
-        # Disegna
-        draw_game(env, total_score, episode)
+        draw_game(env, episode)
         clock.tick(FPS)
     
-    # Fine episodio
     if running:
         score = env.score
         total_score += score
@@ -149,9 +127,7 @@ while running:
         avg_score = total_score / episode
         print(f"Episodio {episode:3d} | Score: {score:2d} | Best: {best_score:2d} | Media: {avg_score:.2f}")
 
-print(f"\nTest completato!")
-print(f"Episodi giocati: {episode}")
-print(f"Best score: {best_score}")
-print(f"Media score: {total_score / episode:.2f}")
+if VERBOSE:
+    print(f"\nTest completato! Best: {best_score}")
 
 pygame.quit()

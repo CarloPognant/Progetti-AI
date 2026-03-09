@@ -2,6 +2,7 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 import random
+import os
 from collections import deque
 from model import SnakeNet
 from snake_env import SnakeAIEnv
@@ -25,6 +26,38 @@ print(f"Training on {device}")
 env = SnakeAIEnv()
 model = SnakeNet().to(device)
 target_model = SnakeNet().to(device)
+
+# 🔄 CONTINUA DA MODELLO PRECEDENTE O RIPETI DA ZERO?
+LOAD_PREVIOUS_MODEL = True  # ← Metti False per ripartire da zero
+BEST_SCORE_FROM_PREVIOUS = 30  # ← CAMBIA QUESTO SE CONTINUI! Metti il valore corretto (30, 40, ecc)
+
+# DEBUG: Vedi dove sta cercando il file
+current_dir = os.getcwd()
+model_path = os.path.join(current_dir, "snake_model_best.pt")
+print(f"\n📁 Directory corrente: {current_dir}")
+print(f"📄 Cerco il modello in: {model_path}")
+print(f"✓ File esiste? {os.path.exists(model_path)}\n")
+
+best_score = 0  # Iniziale
+
+if LOAD_PREVIOUS_MODEL and os.path.exists("snake_model_best.pt"):
+    try:
+        model.load("snake_model_best.pt")
+        print("✅ Modello precedente caricato! Continuo l'addestramento...")
+        # IMPORTANTE: Quando continui il training, IMPOSTA best_score al valore corretto!
+        best_score = BEST_SCORE_FROM_PREVIOUS
+        print(f"📊 Riprendendo da Best Score: {best_score} mele\n")
+    except Exception as e:
+        print(f"⚠️  Impossibile caricare il modello: {e}")
+        print("Parto da zero.\n")
+        best_score = 0
+else:
+    if LOAD_PREVIOUS_MODEL:
+        print("🆕 File non trovato! Parto da un modello nuovo (zero)\n")
+    else:
+        print("🆕 LOAD_PREVIOUS_MODEL = False. Parto da un modello nuovo (zero)\n")
+    best_score = 0
+
 target_model.load_state_dict(model.state_dict())
 target_model.eval()
 
@@ -77,7 +110,6 @@ def select_action(state, epsilon):
             return q_values.argmax(1).item()
 
 # Training loop
-best_score = 0
 epsilon = EPSILON
 
 for episode in range(EPISODES):
