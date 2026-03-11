@@ -7,7 +7,6 @@ import sys
 import numpy as np
 from collections import deque
 
-# ── path setup ────────────────────────────────────────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'config'))
 
 from model     import SnakeNet
@@ -17,15 +16,16 @@ from config    import (
     BATCH_SIZE, MEMORY_SIZE, EPISODES, TARGET_UPDATE,
     MODEL_BEST_PATH, MODEL_FINAL_PATH, BEST_SCORE_PATH,
     INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE,
-    LOAD_PREVIOUS_MODEL,
+    LOAD_PREVIOUS_MODEL, NUM_ENVS,
 )
 
 # ── device ────────────────────────────────────────────────────
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Training on: {device}")
+print(f"Ambienti paralleli: {NUM_ENVS}")
+print(f"Batch size: {BATCH_SIZE}")
 
-# ── ambiente e modelli ────────────────────────────────────────
-env          = SnakeAIEnv()
+# ── modelli ───────────────────────────────────────────────────
 model        = SnakeNet(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE).to(device)
 target_model = SnakeNet(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE).to(device)
 
@@ -41,8 +41,7 @@ if LOAD_PREVIOUS_MODEL and os.path.exists(MODEL_BEST_PATH):
                 best_score = int(f.read().strip())
         print(f"📊 Riprendendo da best score: {best_score}\n")
     except Exception as e:
-        print(f"⚠️  Impossibile caricare il modello: {e}\nParto da zero.\n")
-        best_score = 0
+        print(f"⚠️  Impossibile caricare: {e}\nParto da zero.\n")
 else:
     print("🆕 Parto da un modello nuovo.\n")
 
@@ -53,13 +52,9 @@ optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
 # ── Prioritized Replay Memory ─────────────────────────────────
 class PrioritizedMemory:
-    """
-    Replay memory con priorità: gli errori più grandi vengono
-    campionati più spesso → impara più velocemente dagli errori.
-    """
     def __init__(self, capacity, alpha=0.6):
         self.capacity   = capacity
-        self.alpha      = alpha          # quanto conta la priorità (0 = uniforme)
+        self.alpha      = alpha
         self.memory     = []
         self.priorities = []
         self.pos        = 0
@@ -75,15 +70,14 @@ class PrioritizedMemory:
         self.pos = (self.pos + 1) % self.capacity
 
     def sample(self, batch_size, beta=0.4):
-        prios = np.array(self.priorities, dtype=np.float32)
-        probs = prios ** self.alpha
+        prios  = np.array(self.priorities, dtype=np.float32)
+        probs  = prios ** self.alpha
         probs /= probs.sum()
 
         indices = np.random.choice(len(self.memory), batch_size, p=probs)
         samples = [self.memory[i] for i in indices]
 
-        # Importance-sampling weights (correggono il bias)
-        total  = len(self.memory)
+        total   = len(self.memory)
         weights = (total * probs[indices]) ** (-beta)
         weights /= weights.max()
 
@@ -99,13 +93,16 @@ class PrioritizedMemory:
 
 memory = PrioritizedMemory(MEMORY_SIZE)
 
-# ── funzioni di training ──────────────────────────────────────
-def select_action(state, epsilon):
+# ── funzioni ──────────────────────────────────────────────────
+def select_actions_batch(states, epsilon):
+    """Seleziona azioni per tutti gli ambienti in un solo forward pass."""
     if random.random() < epsilon:
-        return random.randint(0, OUTPUT_SIZE - 1)
-    state_t = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
+        return [random.randint(0, OUTPUT_SIZE - 1) for _ in range(len(states))]
+
+    states_t = torch.tensor(np.array(states), dtype=torch.float32).to(device)
     with torch.no_grad():
-        return model(state_t).argmax(1).item()
+        q_values = model(states_t)
+    return q_values.argmax(1).tolist()
 
 
 def replay(batch_size, beta=0.4):
@@ -121,85 +118,99 @@ def replay(batch_size, beta=0.4):
     next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(device)
     dones       = torch.tensor(dones,                  dtype=torch.float32).to(device)
 
-    # Current Q
     q_values = model(states).gather(1, actions.unsqueeze(1)).squeeze(1)
 
-    # Double DQN: scegli azione con model, valutala con target_model
     with torch.no_grad():
         best_actions  = model(next_states).argmax(1, keepdim=True)
         next_q_values = target_model(next_states).gather(1, best_actions).squeeze(1)
         target_q      = rewards + GAMMA * next_q_values * (1 - dones)
 
-    # TD error → aggiorna priorità
     td_errors = (q_values - target_q).detach().cpu().numpy()
     memory.update_priorities(indices, td_errors)
 
-    # Loss pesata per importance sampling
     loss = (weights * F.smooth_l1_loss(q_values, target_q, reduction='none')).mean()
 
     optimizer.zero_grad()
     loss.backward()
-    torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)  # gradient clipping
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
     optimizer.step()
 
-    return loss.item()
 
+# ── inizializza ambienti paralleli ────────────────────────────
+envs   = [SnakeAIEnv() for _ in range(NUM_ENVS)]
+states = [env.reset() for env in envs]
 
-# ── training loop ─────────────────────────────────────────────
-epsilon     = EPSILON
-beta        = 0.4         # importance-sampling beta (aumenta nel tempo)
-beta_max    = 1.0
-beta_increment = (beta_max - beta) / EPISODES
-
-scores_window = deque(maxlen=100)   # media mobile ultimi 100 episodi
+epsilon        = EPSILON
+beta           = 0.4
+beta_increment = (1.0 - beta) / EPISODES
+scores_window  = deque(maxlen=100)
+total_episodes = 0
+round_num      = 0
 
 print("=" * 60)
 print("🚀 TRAINING AVVIATO")
+print(f"   {NUM_ENVS} serpenti giocano in parallelo")
+print(f"   Training ad ogni step, batch={BATCH_SIZE}")
 print("=" * 60)
 
-for episode in range(EPISODES):
-    state = env.reset()
-    done  = False
-    episode_reward = 0
+# ── training loop ─────────────────────────────────────────────
+for round_num in range(EPISODES * 20):
 
-    while not done:
-        action                        = select_action(state, epsilon)
-        next_state, reward, done      = env.step(action)
-        memory.push((state, action, reward, next_state, float(done)))
-        replay(BATCH_SIZE, beta)
-        episode_reward += reward
-        state           = next_state
+    # 1. Azioni batch per tutti gli ambienti
+    actions = select_actions_batch(states, epsilon)
 
-    epsilon = max(EPSILON_MIN, epsilon * EPSILON_DECAY)
-    beta    = min(beta_max, beta + beta_increment)
+    # 2. Step in ogni ambiente
+    next_states = []
+    for i, (env, action) in enumerate(zip(envs, actions)):
+        next_state, reward, done = env.step(action)
+        memory.push((states[i], action, reward, next_state, float(done)))
 
-    # Aggiorna target network
-    if episode % TARGET_UPDATE == 0:
+        if done:
+            total_episodes += 1
+            score = env.score
+            scores_window.append(score)
+
+            if score > best_score:
+                best_score = score
+                model.save(MODEL_BEST_PATH)
+                with open(BEST_SCORE_PATH, 'w') as f:
+                    f.write(str(best_score))
+                print(f"🏆 NEW BEST: {best_score} mele! (Episodio {total_episodes})")
+
+            next_state = env.reset()
+
+        next_states.append(next_state)
+
+    states = next_states
+
+    # 3. Training ad ogni step ← cambiamento chiave
+    replay(BATCH_SIZE, beta)
+
+    # 4. Target network update
+    if round_num % (TARGET_UPDATE * 100) == 0:
         target_model.load_state_dict(model.state_dict())
 
-    score = env.score
-    scores_window.append(score)
-    avg_score = np.mean(scores_window)
+    # 5. Epsilon decay ogni 64 step (= 1 "episodio equivalente")
+    if round_num % 64 == 0:
+        epsilon = max(EPSILON_MIN, epsilon * EPSILON_DECAY)
+        beta    = min(1.0, beta + beta_increment)
 
-    # Salva se nuovo best
-    if score > best_score:
-        best_score = score
-        model.save(MODEL_BEST_PATH)
-        with open(BEST_SCORE_PATH, 'w') as f:
-            f.write(str(best_score))
-        print(f"🏆 NEW BEST: {best_score} mele! (Episode {episode + 1})")
+    # 6. Log ogni 6400 step (~100 episodi equivalenti)
+    if round_num % 6400 == 0 and round_num > 0 and len(scores_window) > 0:
+        avg = np.mean(scores_window)
+        print(f"✓ Ep ~{total_episodes:6d} | "
+              f"Best: {best_score:3d} | "
+              f"Avg(100): {avg:5.1f} | "
+              f"Eps: {epsilon:.3f}")
 
-    if (episode + 1) % 100 == 0:
-        print(f"✓ Ep {episode + 1:5d}/{EPISODES} | "
-              f"Score: {score:3d} | Best: {best_score:3d} | "
-              f"Avg(100): {avg_score:5.1f} | Eps: {epsilon:.3f}")
+    if total_episodes >= EPISODES:
+        break
 
-# ── fine training ─────────────────────────────────────────────
+# ── fine ──────────────────────────────────────────────────────
 model.save(MODEL_FINAL_PATH)
 
 print("\n" + "=" * 60)
 print("✅ TRAINING COMPLETATO!")
-print(f"   Best score : {best_score} mele")
-print(f"   Episodi    : {EPISODES}")
-print(f"   Modelli    : {MODEL_BEST_PATH}")
+print(f"   Episodi totali : {total_episodes}")
+print(f"   Best score     : {best_score} mele")
 print("=" * 60)

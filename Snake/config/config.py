@@ -26,12 +26,15 @@ CELL_SIZE = 40
 LEARNING_RATE  = 0.0001
 GAMMA          = 0.99
 EPSILON        = 1.0
-EPSILON_DECAY  = 0.9998   # scende lentamente → esplora di più
+EPSILON_DECAY  = 0.9998
 EPSILON_MIN    = 0.05
-BATCH_SIZE     = 256      # batch più grande → gradienti stabili
-MEMORY_SIZE    = 200000   # più memoria → più varietà
+BATCH_SIZE     = 1024     # ↑ aumentato da 512
+MEMORY_SIZE    = 200000
 EPISODES       = 30000
-TARGET_UPDATE  = 5        # aggiorna spesso la target network
+TARGET_UPDATE  = 5
+
+# 🚀 Ambienti paralleli
+NUM_ENVS = 64             # ↑ aumentato da 16
 
 # 🎯 Fine-tuning
 EPSILON_FINETUNING  = 0.1
@@ -41,8 +44,8 @@ EPISODES_FINETUNING = 10000
 FPS = 10
 
 # 🎯 Rete Neurale
-INPUT_SIZE  = 20   # stato esteso (era 11)
-HIDDEN_SIZE = 512  # rete più grande
+INPUT_SIZE  = 22
+HIDDEN_SIZE = 512
 OUTPUT_SIZE = 3
 
 # 🔧 Misc
