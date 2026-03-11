@@ -97,29 +97,25 @@ class SnakeAIEnv:
             self.snake.pop()
             self.steps_since_apple += 1
 
-            # Reward avvicinamento/allontanamento
+            # 🎯 Reward avvicinamento/allontanamento (AUMENTATO 10x!)
             new_dist = abs(new_head[0] - apple_row) + abs(new_head[1] - apple_col)
-            reward = 0.1 if new_dist < old_dist else -0.1
+            reward = 1.0 if new_dist < old_dist else -1.0
 
-            # ⚠️ Penalità loop — se torna sulla stessa cella
+            # ⚠️ Penalità loop RIDOTTA (solo dalla 3a visita)
             visit_count = self.visited_positions.get(new_head, 0) + 1
             self.visited_positions[new_head] = visit_count
-            if visit_count == 2:
-                reward -= 0.5   # seconda visita: piccola penalità
-            elif visit_count == 3:
-                reward -= 1.5   # terza visita: penalità media
-            elif visit_count >= 4:
-                reward -= 3.0   # quarta+ visita: penalità forte
+            if visit_count >= 3:
+                reward -= 0.5 * (visit_count - 2)
 
-            # ⚠️ Penalità trappola (flood fill)
+            # ⚠️ Penalità trappola RIDOTTA (da 3.0 a 1.0)
             free_space  = self._flood_fill(new_head)
             body_length = len(self.snake)
             if free_space < body_length:
                 trap_ratio = free_space / max(body_length, 1)
-                reward -= (1.0 - trap_ratio) * 3.0
+                reward -= (1.0 - trap_ratio) * 1.0
 
-            # Timeout — ridotto per scoraggiare girare a vuoto
-            if self.steps_since_apple > self.rows * self.cols // 2:
+            # Timeout RIDOTTO (da 127 a 100 step)
+            if self.steps_since_apple > 100:
                 reward = -5.0
                 done   = True
 

@@ -25,7 +25,7 @@ CELL_SIZE = 40
 # 🧠 Iperparametri Training
 LEARNING_RATE  = 0.0001
 GAMMA          = 0.99
-EPSILON        = 1.0
+EPSILON        = 0.4
 EPSILON_DECAY  = 0.9998
 EPSILON_MIN    = 0.05
 BATCH_SIZE     = 1024     # ↑ aumentato da 512
