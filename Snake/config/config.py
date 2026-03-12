@@ -25,12 +25,12 @@ CELL_SIZE = 40
 # 🧠 Iperparametri Training
 LEARNING_RATE  = 0.0001
 GAMMA          = 0.99
-EPSILON        = 0.4
-EPSILON_DECAY  = 0.9998
-EPSILON_MIN    = 0.05
+EPSILON        = 0.1385
+EPSILON_DECAY  = 0.9995
+EPSILON_MIN    = 0.01
 BATCH_SIZE     = 1024     # ↑ aumentato da 512
 MEMORY_SIZE    = 200000
-EPISODES       = 30000
+EPISODES       = 50000
 TARGET_UPDATE  = 5
 
 # 🚀 Ambienti paralleli

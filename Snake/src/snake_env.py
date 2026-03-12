@@ -6,6 +6,7 @@ from collections import deque
 class SnakeAIEnv:
     """
     Ambiente Snake con stato esteso (22 valori) + flood fill + loop detection.
+    🚀 CON LENGTH BONUS REWARD per incentivare serpenti lunghi!
     """
 
     def __init__(self, rows=15, cols=17):
@@ -86,7 +87,18 @@ class SnakeAIEnv:
         elif new_head == self.apple:
             self.snake.insert(0, new_head)
             self.apple = self._spawn_apple()
-            reward = 20.0
+            
+            # 🚀 LENGTH BONUS REWARD!
+            # Più è lungo il serpente, più reward ottiene per ogni mela
+            # Questo SPINGE il serpente a diventare lungo!
+            length_bonus = len(self.snake) * 0.5
+            reward = 20.0 + length_bonus
+            
+            # Esempi:
+            # - Serpente 10 celle → reward = 20 + 5 = 25
+            # - Serpente 50 celle → reward = 20 + 25 = 45
+            # - Serpente 100 celle → reward = 20 + 50 = 70
+            
             self.score += 1
             self.steps_since_apple = 0
             self.visited_positions = {}   # reset visite dopo ogni mela
@@ -97,24 +109,24 @@ class SnakeAIEnv:
             self.snake.pop()
             self.steps_since_apple += 1
 
-            # 🎯 Reward avvicinamento/allontanamento (AUMENTATO 10x!)
+            # 🎯 Reward avvicinamento/allontanamento
             new_dist = abs(new_head[0] - apple_row) + abs(new_head[1] - apple_col)
             reward = 1.0 if new_dist < old_dist else -1.0
 
-            # ⚠️ Penalità loop RIDOTTA (solo dalla 3a visita)
+            # ⚠️ Penalità loop (solo dalla 3a visita)
             visit_count = self.visited_positions.get(new_head, 0) + 1
             self.visited_positions[new_head] = visit_count
             if visit_count >= 3:
                 reward -= 0.5 * (visit_count - 2)
 
-            # ⚠️ Penalità trappola RIDOTTA (da 3.0 a 1.0)
+            # ⚠️ Penalità trappola (ridotta)
             free_space  = self._flood_fill(new_head)
             body_length = len(self.snake)
             if free_space < body_length:
                 trap_ratio = free_space / max(body_length, 1)
                 reward -= (1.0 - trap_ratio) * 1.0
 
-            # Timeout RIDOTTO (da 127 a 100 step)
+            # Timeout
             if self.steps_since_apple > 100:
                 reward = -5.0
                 done   = True
@@ -183,7 +195,7 @@ class SnakeAIEnv:
         total_cells  = self.rows * self.cols
         snake_length = float(len(self.snake)) / total_cells
 
-        manhattan  = float(abs(apple_row - head_row) + abs(apple_col - head_col))
+        manhattan  = float(abs(apple_row - head_row) + abs(apple_col - apple_col))
         manhattan /= (self.rows + self.cols)
 
         free_space = self._flood_fill(self.snake[0])
