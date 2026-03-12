@@ -9,6 +9,8 @@ from collections import deque
 from datetime import datetime
 import time
 
+sys.stdout.flush()
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'config'))
 
 from model     import SnakeNet
@@ -21,9 +23,15 @@ from config    import (
     LOAD_PREVIOUS_MODEL, NUM_ENVS, MODELS_DIR,
 )
 
+def print_flush(msg):
+    """Stampa con flush immediato"""
+    print(msg, flush=True)
+
 # ══════════════════════════════════════════════════════════════
 #  🎨 CONFIGURAZIONE LOGGER AVANZATO
 # ══════════════════════════════════════════════════════════════
+
+LOG_INTERVAL = 100  # ← Log ogni 100 EPISODI REALI!
 
 class TrainingLogger:
     """Logger avanzato per il training con statistiche dettagliate"""
@@ -31,7 +39,11 @@ class TrainingLogger:
     def __init__(self):
         self.start_time = time.time()
         self.last_log_time = time.time()
-        self.episodes_since_last_log = 0
+        self.last_log_episode = 0
+        
+    def should_log(self, current_episode):
+        """Verifica se è ora di fare il log"""
+        return current_episode - self.last_log_episode >= LOG_INTERVAL
         
     def log_progress(self, episode, best_score, avg_score, epsilon, beta, memory_size):
         """Log dettagliato con timing e statistiche"""
@@ -39,9 +51,11 @@ class TrainingLogger:
         elapsed_total = current_time - self.start_time
         elapsed_since_log = current_time - self.last_log_time
         
+        episodes_since_log = episode - self.last_log_episode
+        
         # Calcola velocità training
         if elapsed_since_log > 0:
-            eps_per_sec = self.episodes_since_last_log / elapsed_since_log
+            eps_per_sec = episodes_since_log / elapsed_since_log
         else:
             eps_per_sec = 0
         
@@ -50,33 +64,29 @@ class TrainingLogger:
         minutes = int((elapsed_total % 3600) // 60)
         seconds = int(elapsed_total % 60)
         
-        print(f"\n{'='*70}")
-        print(f"📊 EPISODIO {episode:,} | ⏱️  {hours:02d}:{minutes:02d}:{seconds:02d}")
-        print(f"{'='*70}")
-        print(f"  🏆 Best Score     : {best_score:3d} mele")
-        print(f"  📈 Avg (100 ep)   : {avg_score:5.2f} mele")
-        print(f"  🎲 Epsilon        : {epsilon:.4f} ({(1-epsilon)*100:.1f}% sfruttamento)")
-        print(f"  🎯 Beta (PER)     : {beta:.4f}")
-        print(f"  💾 Memory size    : {memory_size:,} / {MEMORY_SIZE:,}")
-        print(f"  ⚡ Velocità       : {eps_per_sec:.1f} ep/sec")
-        print(f"{'='*70}\n")
+        print_flush(f"\n{'='*70}")
+        print_flush(f"📊 EPISODIO {episode:,} | ⏱️  {hours:02d}:{minutes:02d}:{seconds:02d}")
+        print_flush(f"{'='*70}")
+        print_flush(f"  🏆 Best Score     : {best_score:3d} mele")
+        print_flush(f"  📈 Avg (100 ep)   : {avg_score:5.2f} mele")
+        print_flush(f"  🎲 Epsilon        : {epsilon:.4f} ({(1-epsilon)*100:.1f}% sfruttamento)")
+        print_flush(f"  🎯 Beta (PER)     : {beta:.4f}")
+        print_flush(f"  💾 Memory size    : {memory_size:,} / {MEMORY_SIZE:,}")
+        print_flush(f"  ⚡ Velocità       : {eps_per_sec:.1f} ep/sec")
+        print_flush(f"{'='*70}\n")
         
         self.last_log_time = current_time
-        self.episodes_since_last_log = 0
-    
-    def increment_episode(self):
-        """Incrementa contatore episodi"""
-        self.episodes_since_last_log += 1
+        self.last_log_episode = episode
     
     def log_new_best(self, score, episode):
         """Log quando si raggiunge un nuovo best score"""
-        print(f"\n{'🎉'*30}")
-        print(f"  🏆 NUOVO RECORD: {score} MELE! (Episodio {episode:,})")
-        print(f"{'🎉'*30}\n")
+        print_flush(f"\n{'🎉'*30}")
+        print_flush(f"  🏆 NUOVO RECORD: {score} MELE! (Episodio {episode:,})")
+        print_flush(f"{'🎉'*30}\n")
     
     def log_checkpoint(self, episode):
         """Log quando si salva un checkpoint"""
-        print(f"💾 Checkpoint salvato (Episodio {episode:,})")
+        print_flush(f"💾 Checkpoint salvato (Episodio {episode:,})")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -102,22 +112,25 @@ def save_checkpoint(model, episode, best_score, epsilon):
 #  🚀 SETUP INIZIALE
 # ══════════════════════════════════════════════════════════════
 
+print_flush("\n" + "="*70)
+print_flush("🐍 SNAKE AI - TRAINING AVANZATO (LOG OGNI 100 EPISODI)")
+print_flush("="*70)
+print_flush(f"  🖥️  Device           : {'cuda' if torch.cuda.is_available() else 'cpu'}")
+print_flush(f"  🌍 Ambienti paralleli: {NUM_ENVS}")
+print_flush(f"  📦 Batch size        : {BATCH_SIZE}")
+print_flush(f"  🎯 Target episodi    : {EPISODES:,}")
+print_flush(f"  📊 Log ogni          : {LOG_INTERVAL} episodi")
+print_flush(f"  💾 Auto-save ogni    : {CHECKPOINT_INTERVAL:,} episodi")
+print_flush("="*70 + "\n")
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logger = TrainingLogger()
 
-print("\n" + "="*70)
-print("🐍 SNAKE AI - TRAINING AVANZATO")
-print("="*70)
-print(f"  🖥️  Device           : {device}")
-print(f"  🌍 Ambienti paralleli: {NUM_ENVS}")
-print(f"  📦 Batch size        : {BATCH_SIZE}")
-print(f"  🎯 Target episodi    : {EPISODES:,}")
-print(f"  💾 Auto-save ogni    : {CHECKPOINT_INTERVAL:,} episodi")
-print("="*70 + "\n")
-
 # ── modelli ───────────────────────────────────────────────────
+print_flush("🔧 Inizializzazione modelli...")
 model        = SnakeNet(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE).to(device)
 target_model = SnakeNet(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE).to(device)
+print_flush("✓ Modelli creati")
 
 # ── carica modello precedente ─────────────────────────────────
 best_score = 0
@@ -125,16 +138,18 @@ start_episode = 0
 
 if LOAD_PREVIOUS_MODEL and os.path.exists(MODEL_BEST_PATH):
     try:
+        print_flush(f"🔍 Caricamento modello da: {MODEL_BEST_PATH}")
         model.load(MODEL_BEST_PATH, device)
-        print(f"✅ Modello caricato da: {MODEL_BEST_PATH}")
+        print_flush(f"✅ Modello caricato con successo!")
         if os.path.exists(BEST_SCORE_PATH):
             with open(BEST_SCORE_PATH) as f:
                 best_score = int(f.read().strip())
-        print(f"📊 Best score precedente: {best_score}\n")
+        print_flush(f"📊 Best score precedente: {best_score}\n")
     except Exception as e:
-        print(f"⚠️  Impossibile caricare: {e}\nParto da zero.\n")
+        print_flush(f"⚠️  Impossibile caricare: {e}")
+        print_flush("🆕 Parto da un modello nuovo.\n")
 else:
-    print("🆕 Nuovo training da zero.\n")
+    print_flush("🆕 Nuovo training da zero.\n")
 
 target_model.load_state_dict(model.state_dict())
 target_model.eval()
@@ -142,6 +157,8 @@ target_model.eval()
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
 # ── Prioritized Replay Memory ─────────────────────────────────
+print_flush("💾 Inizializzazione Prioritized Replay Memory...")
+
 class PrioritizedMemory:
     def __init__(self, capacity, alpha=0.6):
         self.capacity   = capacity
@@ -183,6 +200,7 @@ class PrioritizedMemory:
 
 
 memory = PrioritizedMemory(MEMORY_SIZE)
+print_flush("✓ Memory pronta")
 
 # ── funzioni ──────────────────────────────────────────────────
 def select_actions_batch(states, epsilon):
@@ -228,8 +246,10 @@ def replay(batch_size, beta=0.4):
 
 
 # ── inizializza ambienti paralleli ────────────────────────────
+print_flush(f"🌍 Inizializzazione {NUM_ENVS} ambienti paralleli...")
 envs   = [SnakeAIEnv() for _ in range(NUM_ENVS)]
 states = [env.reset() for env in envs]
+print_flush("✓ Ambienti pronti")
 
 epsilon        = EPSILON
 beta           = 0.4
@@ -238,7 +258,12 @@ scores_window  = deque(maxlen=100)
 total_episodes = start_episode
 round_num      = 0
 
-print("🚀 TRAINING INIZIATO!\n")
+print_flush("\n" + "="*70)
+print_flush("🚀 TRAINING INIZIATO!")
+print_flush("="*70)
+print_flush(f"📊 Vedrai statistiche dettagliate ogni {LOG_INTERVAL} episodi")
+print_flush(f"🎉 Ogni nuovo record verrà festeggiato!")
+print_flush(f"💾 Checkpoint automatico ogni {CHECKPOINT_INTERVAL:,} episodi\n")
 
 # ── training loop ─────────────────────────────────────────────
 try:
@@ -255,7 +280,6 @@ try:
 
             if done:
                 total_episodes += 1
-                logger.increment_episode()
                 score = env.score
                 scores_window.append(score)
 
@@ -270,6 +294,18 @@ try:
                 if total_episodes % CHECKPOINT_INTERVAL == 0:
                     save_checkpoint(model, total_episodes, best_score, epsilon)
                     logger.log_checkpoint(total_episodes)
+
+                # 📊 LOG OGNI 100 EPISODI
+                if logger.should_log(total_episodes) and len(scores_window) > 0:
+                    avg = np.mean(scores_window)
+                    logger.log_progress(
+                        episode=total_episodes,
+                        best_score=best_score,
+                        avg_score=avg,
+                        epsilon=epsilon,
+                        beta=beta,
+                        memory_size=len(memory)
+                    )
 
                 next_state = env.reset()
 
@@ -289,36 +325,24 @@ try:
             epsilon = max(EPSILON_MIN, epsilon * EPSILON_DECAY)
             beta    = min(1.0, beta + beta_increment)
 
-        # 6. Log dettagliato ogni 6400 step (~100 episodi)
-        if round_num % 6400 == 0 and round_num > 0 and len(scores_window) > 0:
-            avg = np.mean(scores_window)
-            logger.log_progress(
-                episode=total_episodes,
-                best_score=best_score,
-                avg_score=avg,
-                epsilon=epsilon,
-                beta=beta,
-                memory_size=len(memory)
-            )
-
         if total_episodes >= EPISODES:
             break
 
 except KeyboardInterrupt:
-    print("\n\n⚠️  TRAINING INTERROTTO!")
-    print("💾 Salvataggio checkpoint finale...")
+    print_flush("\n\n⚠️  TRAINING INTERROTTO!")
+    print_flush("💾 Salvataggio checkpoint finale...")
     save_checkpoint(model, total_episodes, best_score, epsilon)
-    print("✅ Checkpoint salvato!")
+    print_flush("✅ Checkpoint salvato!")
 
 # ── fine ──────────────────────────────────────────────────────
 model.save(MODEL_FINAL_PATH)
 
-print("\n" + "="*70)
-print("✅ TRAINING COMPLETATO!")
-print("="*70)
-print(f"  📊 Episodi totali  : {total_episodes:,}")
-print(f"  🏆 Best score      : {best_score} mele")
-print(f"  💾 Modello salvato : {MODEL_FINAL_PATH}")
-print(f"  💾 Best model      : {MODEL_BEST_PATH}")
-print(f"  💾 Checkpoint      : {CHECKPOINT_PATH}")
-print("="*70 + "\n")
+print_flush("\n" + "="*70)
+print_flush("✅ TRAINING COMPLETATO!")
+print_flush("="*70)
+print_flush(f"  📊 Episodi totali  : {total_episodes:,}")
+print_flush(f"  🏆 Best score      : {best_score} mele")
+print_flush(f"  💾 Modello salvato : {MODEL_FINAL_PATH}")
+print_flush(f"  💾 Best model      : {MODEL_BEST_PATH}")
+print_flush(f"  💾 Checkpoint      : {CHECKPOINT_PATH}")
+print_flush("="*70 + "\n")
