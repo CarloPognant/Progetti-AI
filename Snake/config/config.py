@@ -25,7 +25,7 @@ CELL_SIZE = 40
 # 🧠 Iperparametri Training
 LEARNING_RATE  = 0.0001
 GAMMA          = 0.99
-EPSILON        = 1.0          # riparte da 1.0: nuova architettura = nuovo training
+EPSILON        = 0.5272          # riparte da 1.0: nuova architettura = nuovo training
 EPSILON_DECAY  = 0.9995
 EPSILON_MIN    = 0.01
 BATCH_SIZE     = 512
@@ -52,4 +52,4 @@ OUTPUT_SIZE  = 3
 # 🔧 Misc
 USE_GPU             = True
 VERBOSE             = True
-LOAD_PREVIOUS_MODEL = False   # False: architettura cambiata, modello vecchio incompatibile
+LOAD_PREVIOUS_MODEL = True
