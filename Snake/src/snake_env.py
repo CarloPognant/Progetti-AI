@@ -6,7 +6,7 @@ from collections import deque
 class SnakeAIEnv:
     """
     Ambiente Snake con stato esteso (22 valori) + flood fill + loop detection.
-    🚀 CON LENGTH BONUS REWARD per incentivare serpenti lunghi!
+    🔧 FIX: Trap penalty scalata con la lunghezza del corpo.
     """
 
     def __init__(self, rows=15, cols=17):
@@ -21,7 +21,7 @@ class SnakeAIEnv:
         self.steps             = 0
         self.score             = 0
         self.steps_since_apple = 0
-        self.visited_positions = {}   # posizione → quante volte visitata
+        self.visited_positions = {}
         return self._get_state()
 
     def _spawn_apple(self):
@@ -87,21 +87,10 @@ class SnakeAIEnv:
         elif new_head == self.apple:
             self.snake.insert(0, new_head)
             self.apple = self._spawn_apple()
-            
-            # 🚀 LENGTH BONUS REWARD!
-            # Più è lungo il serpente, più reward ottiene per ogni mela
-            # Questo SPINGE il serpente a diventare lungo!
-            length_bonus = len(self.snake) * 0.5
-            reward = 20.0 + length_bonus
-            
-            # Esempi:
-            # - Serpente 10 celle → reward = 20 + 5 = 25
-            # - Serpente 50 celle → reward = 20 + 25 = 45
-            # - Serpente 100 celle → reward = 20 + 50 = 70
-            
+            reward = 20.0
             self.score += 1
             self.steps_since_apple = 0
-            self.visited_positions = {}   # reset visite dopo ogni mela
+            self.visited_positions = {}
 
         # — Movimento normale ——————————————————————————————
         else:
@@ -119,12 +108,35 @@ class SnakeAIEnv:
             if visit_count >= 3:
                 reward -= 0.5 * (visit_count - 2)
 
-            # ⚠️ Penalità trappola (ridotta)
+            # ⚠️ Penalità trappola SCALATA CON LA LUNGHEZZA DEL CORPO
+            #
+            # PROBLEMA ORIGINALE: penalty fissa max -1.0, uguale con corpo 5 o corpo 45.
+            # Con 45 segmenti, infilarsi in uno spazio stretto è quasi sempre fatale,
+            # ma il segnale reward non era abbastanza forte da cambiare il comportamento:
+            # il serpente preferiva comunque inseguire la mela (+20).
+            #
+            # SOLUZIONE:
+            # - Trigger: scatta se free_space < corpo * 1.5 (margine di sicurezza)
+            # - severity: quanto siamo vicini a bloccarci completamente (0..1)
+            # - length_factor: moltiplica la penalità in base alla lunghezza
+            #     corpo  5 → factor 1.0   (penalità normale)
+            #     corpo 20 → factor ~2.25
+            #     corpo 40 → factor ~3.9
+            #     corpo 45+ → capped a 4.0
+            #
+            # Effetto pratico: corpo 40 completamente bloccato → penalty ~-4.0
+            # Forte abbastanza da superare il reward avvicinamento (+1.0)
+            # e scoraggiare la mossa anche se la mela è vicina.
+
             free_space  = self._flood_fill(new_head)
             body_length = len(self.snake)
-            if free_space < body_length:
-                trap_ratio = free_space / max(body_length, 1)
-                reward -= (1.0 - trap_ratio) * 1.0
+
+            if free_space < body_length * 1.5:
+                trap_ratio    = free_space / max(body_length, 1)
+                severity      = max(0.0, 1.0 - trap_ratio / 1.5)          # 0..1
+                length_factor = min(1.0 + (body_length - 5) / 12.0, 4.0)  # 1..4
+                length_factor = max(length_factor, 1.0)
+                reward -= severity * length_factor
 
             # Timeout
             if self.steps_since_apple > 100:
@@ -195,7 +207,8 @@ class SnakeAIEnv:
         total_cells  = self.rows * self.cols
         snake_length = float(len(self.snake)) / total_cells
 
-        manhattan  = float(abs(apple_row - head_row) + abs(apple_col - apple_col))
+        # BUG FIX: era "abs(apple_col - apple_col)" → sempre 0!
+        manhattan  = float(abs(apple_row - head_row) + abs(apple_col - head_col))
         manhattan /= (self.rows + self.cols)
 
         free_space = self._flood_fill(self.snake[0])
