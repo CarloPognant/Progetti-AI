@@ -5,8 +5,18 @@ from collections import deque
 
 class SnakeAIEnv:
     """
-    Ambiente Snake con stato esteso (22 valori) + flood fill + loop detection.
-    🔧 FIX: Trap penalty scalata con la lunghezza del corpo.
+    Ambiente Snake — stato CNN (3, ROWS, COLS).
+
+    Canali:
+      0 → corpo con gradiente: testa=1.0, ogni segmento scende verso 0
+          → la rete capisce forma e direzione di movimento del corpo
+      1 → testa: 1.0 solo sulla cella testa
+      2 → mela:  1.0 solo sulla cella mela
+
+    Fix reward inclusi:
+      - Trap penalty scalata con lunghezza corpo (1x → 4x)
+      - Bug manhattan fix (era apple_col - apple_col, sempre 0)
+      - Rimosso length_bonus che incentivava greedy behaviour
     """
 
     def __init__(self, rows=15, cols=17):
@@ -32,14 +42,9 @@ class SnakeAIEnv:
                 return apple
 
     def _flood_fill(self, start):
-        """
-        Conta quante celle sono raggiungibili da start
-        senza passare attraverso il corpo del serpente.
-        """
         visited   = set()
         queue     = deque([start])
         snake_set = set(self.snake)
-
         while queue:
             cell = queue.popleft()
             if cell in visited:
@@ -51,7 +56,6 @@ class SnakeAIEnv:
                 continue
             visited.add(cell)
             queue.extend([(r-1,c),(r+1,c),(r,c-1),(r,c+1)])
-
         return len(visited)
 
     def step(self, action):
@@ -98,47 +102,25 @@ class SnakeAIEnv:
             self.snake.pop()
             self.steps_since_apple += 1
 
-            # 🎯 Reward avvicinamento/allontanamento
             new_dist = abs(new_head[0] - apple_row) + abs(new_head[1] - apple_col)
             reward = 1.0 if new_dist < old_dist else -1.0
 
-            # ⚠️ Penalità loop (solo dalla 3a visita)
+            # Penalità loop
             visit_count = self.visited_positions.get(new_head, 0) + 1
             self.visited_positions[new_head] = visit_count
             if visit_count >= 3:
                 reward -= 0.5 * (visit_count - 2)
 
-            # ⚠️ Penalità trappola SCALATA CON LA LUNGHEZZA DEL CORPO
-            #
-            # PROBLEMA ORIGINALE: penalty fissa max -1.0, uguale con corpo 5 o corpo 45.
-            # Con 45 segmenti, infilarsi in uno spazio stretto è quasi sempre fatale,
-            # ma il segnale reward non era abbastanza forte da cambiare il comportamento:
-            # il serpente preferiva comunque inseguire la mela (+20).
-            #
-            # SOLUZIONE:
-            # - Trigger: scatta se free_space < corpo * 1.5 (margine di sicurezza)
-            # - severity: quanto siamo vicini a bloccarci completamente (0..1)
-            # - length_factor: moltiplica la penalità in base alla lunghezza
-            #     corpo  5 → factor 1.0   (penalità normale)
-            #     corpo 20 → factor ~2.25
-            #     corpo 40 → factor ~3.9
-            #     corpo 45+ → capped a 4.0
-            #
-            # Effetto pratico: corpo 40 completamente bloccato → penalty ~-4.0
-            # Forte abbastanza da superare il reward avvicinamento (+1.0)
-            # e scoraggiare la mossa anche se la mela è vicina.
-
+            # Penalità trappola scalata con lunghezza corpo
             free_space  = self._flood_fill(new_head)
             body_length = len(self.snake)
-
             if free_space < body_length * 1.5:
                 trap_ratio    = free_space / max(body_length, 1)
-                severity      = max(0.0, 1.0 - trap_ratio / 1.5)          # 0..1
-                length_factor = min(1.0 + (body_length - 5) / 12.0, 4.0)  # 1..4
+                severity      = max(0.0, 1.0 - trap_ratio / 1.5)
+                length_factor = min(1.0 + (body_length - 5) / 12.0, 4.0)
                 length_factor = max(length_factor, 1.0)
                 reward -= severity * length_factor
 
-            # Timeout
             if self.steps_since_apple > 100:
                 reward = -5.0
                 done   = True
@@ -151,81 +133,35 @@ class SnakeAIEnv:
 
     def _get_state(self):
         """
-        Stato: 22 valori
-          [0-3]   direzione one-hot
-          [4-5]   delta mela normalizzato
-          [6-9]   pericolo assoluto 4 direzioni
-          [10-13] pericolo relativo (sx, dritto, dx, dietro)
-          [14-17] distanza dai muri normalizzata
-          [18]    lunghezza serpente normalizzata
-          [19]    distanza manhattan dalla mela normalizzata
-          [20]    spazio libero normalizzato (flood fill)
-          [21]    rapporto spazio/corpo (< 1 = trappola)
+        Ritorna un array (3, rows, cols) float32.
+
+        Canale 0 — corpo gradiente:
+          Ogni segmento del corpo riceve un valore da 1.0 (testa) a ~0.1 (coda).
+          Questo permette alla CNN di capire non solo dove è il corpo,
+          ma anche da che parte si sta muovendo (il gradiente indica la direzione).
+
+        Canale 1 — testa:
+          Solo la cella della testa vale 1.0. Serve come ancora esplicita per
+          orientare la rete su "dove sono io adesso".
+
+        Canale 2 — mela:
+          Solo la cella della mela vale 1.0. Obiettivo esplicito e spaziale.
         """
-        head_row, head_col = self.snake[0]
-        apple_row, apple_col = self.apple
-        dr, dc = self.direction
+        state = np.zeros((3, self.rows, self.cols), dtype=np.float32)
 
-        direction_state = [
-            1.0 if self.direction == (-1, 0) else 0.0,
-            1.0 if self.direction == ( 1, 0) else 0.0,
-            1.0 if self.direction == (0, -1) else 0.0,
-            1.0 if self.direction == (0,  1) else 0.0,
-        ]
+        # Canale 0: gradiente corpo (testa=1.0, coda→min_val)
+        body_len = len(self.snake)
+        for i, (r, c) in enumerate(self.snake):
+            # 1.0 alla testa, decade linearmente verso la coda
+            val = 1.0 - (i / max(body_len, 1)) * 0.9   # range [1.0, 0.1]
+            state[0, r, c] = val
 
-        apple_delta_row = float(apple_row - head_row) / self.rows
-        apple_delta_col = float(apple_col - head_col) / self.cols
+        # Canale 1: testa
+        head_r, head_c = self.snake[0]
+        state[1, head_r, head_c] = 1.0
 
-        def is_dangerous(r, c):
-            return (r < 0 or r >= self.rows or
-                    c < 0 or c >= self.cols or
-                    (r, c) in self.snake)
+        # Canale 2: mela
+        apple_r, apple_c = self.apple
+        state[2, apple_r, apple_c] = 1.0
 
-        dangers_abs = [
-            1.0 if is_dangerous(head_row - 1, head_col) else 0.0,
-            1.0 if is_dangerous(head_row + 1, head_col) else 0.0,
-            1.0 if is_dangerous(head_row, head_col - 1) else 0.0,
-            1.0 if is_dangerous(head_row, head_col + 1) else 0.0,
-        ]
-
-        left_dir  = ( dc, -dr)
-        right_dir = (-dc,  dr)
-        back_dir  = (-dr, -dc)
-
-        dangers_rel = [
-            1.0 if is_dangerous(head_row + left_dir[0],  head_col + left_dir[1])  else 0.0,
-            1.0 if is_dangerous(head_row + dr,           head_col + dc)            else 0.0,
-            1.0 if is_dangerous(head_row + right_dir[0], head_col + right_dir[1]) else 0.0,
-            1.0 if is_dangerous(head_row + back_dir[0],  head_col + back_dir[1])  else 0.0,
-        ]
-
-        dist_up    = float(head_row)                 / self.rows
-        dist_down  = float(self.rows - 1 - head_row) / self.rows
-        dist_left  = float(head_col)                 / self.cols
-        dist_right = float(self.cols - 1 - head_col) / self.cols
-
-        total_cells  = self.rows * self.cols
-        snake_length = float(len(self.snake)) / total_cells
-
-        # BUG FIX: era "abs(apple_col - apple_col)" → sempre 0!
-        manhattan  = float(abs(apple_row - head_row) + abs(apple_col - head_col))
-        manhattan /= (self.rows + self.cols)
-
-        free_space = self._flood_fill(self.snake[0])
-        free_norm  = float(free_space) / total_cells
-        trap_ratio = float(free_space) / max(len(self.snake), 1)
-        trap_ratio = min(trap_ratio, 5.0) / 5.0
-
-        state = np.array(
-            direction_state +
-            [apple_delta_row, apple_delta_col] +
-            dangers_abs +
-            dangers_rel +
-            [dist_up, dist_down, dist_left, dist_right] +
-            [snake_length, manhattan] +
-            [free_norm, trap_ratio],
-            dtype=np.float32
-        )
-
-        assert len(state) == 22, f"Stato ha {len(state)} valori invece di 22!"
         return state
