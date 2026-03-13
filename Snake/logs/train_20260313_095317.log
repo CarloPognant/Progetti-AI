@@ -1,0 +1,104 @@
+
+======================================================================
+🐍 SNAKE AI - CNN TRAINING
+======================================================================
+  🖥️  Device           : cuda
+  🌍 Ambienti paralleli: 64
+  📦 Batch size        : 512
+  🎯 Target episodi    : 50,000
+  🧠 Architettura      : CNN (3x15x17) → Dueling DQN
+  📝 Log file          : C:\Users\carlo\Desktop\Progetti-AI\Snake\logs\train_20260313_095317.log
+======================================================================
+
+🔧 Inizializzazione modelli CNN...
+✓ Modelli CNN creati — parametri: 8,610,308
+🔍 Caricamento modello da: C:\Users\carlo\Desktop\Progetti-AI\Snake\models\snake_model_best.pt
+✅ Modello caricato!
+📊 Best score precedente: 23
+
+💾 Inizializzazione SumTree PER...
+✓ SumTree pronto
+🌍 Inizializzazione 64 ambienti paralleli...
+✓ Ambienti pronti
+
+🚀 TRAINING INIZIATO!
+📊 Statistiche ogni 100 episodi — tutto salvato in: C:\Users\carlo\Desktop\Progetti-AI\Snake\logs\train_20260313_095317.log
+
+
+======================================================================
+📊 EPISODIO 100 | ⏱️  00:00:11
+======================================================================
+  🏆 Best Score     :  23 mele
+  📈 Avg (100 ep)   :  1.46 mele
+  🎲 Epsilon        : 0.2467 (75.3% sfruttamento)
+  💾 Memory size    : 8,291 / 200,000
+  ⚡ Velocità       : 9.1 ep/sec
+======================================================================
+
+
+======================================================================
+📊 EPISODIO 200 | ⏱️  00:00:19
+======================================================================
+  🏆 Best Score     :  23 mele
+  📈 Avg (100 ep)   :  3.68 mele
+  🎲 Epsilon        : 0.2466 (75.3% sfruttamento)
+  💾 Memory size    : 15,404 / 200,000
+  ⚡ Velocità       : 11.4 ep/sec
+======================================================================
+
+
+======================================================================
+📊 EPISODIO 300 | ⏱️  00:00:28
+======================================================================
+  🏆 Best Score     :  23 mele
+  📈 Avg (100 ep)   :  3.22 mele
+  🎲 Epsilon        : 0.2464 (75.4% sfruttamento)
+  💾 Memory size    : 23,045 / 200,000
+  ⚡ Velocità       : 11.9 ep/sec
+======================================================================
+
+
+======================================================================
+📊 EPISODIO 400 | ⏱️  00:00:35
+======================================================================
+  🏆 Best Score     :  23 mele
+  📈 Avg (100 ep)   :  2.84 mele
+  🎲 Epsilon        : 0.2461 (75.4% sfruttamento)
+  💾 Memory size    : 30,164 / 200,000
+  ⚡ Velocità       : 13.8 ep/sec
+======================================================================
+
+
+======================================================================
+📊 EPISODIO 500 | ⏱️  00:00:41
+======================================================================
+  🏆 Best Score     :  23 mele
+  📈 Avg (100 ep)   :  2.55 mele
+  🎲 Epsilon        : 0.2460 (75.4% sfruttamento)
+  💾 Memory size    : 36,076 / 200,000
+  ⚡ Velocità       : 16.6 ep/sec
+======================================================================
+
+
+======================================================================
+📊 EPISODIO 600 | ⏱️  00:00:48
+======================================================================
+  🏆 Best Score     :  23 mele
+  📈 Avg (100 ep)   :  2.34 mele
+  🎲 Epsilon        : 0.2457 (75.4% sfruttamento)
+  💾 Memory size    : 42,714 / 200,000
+  ⚡ Velocità       : 14.5 ep/sec
+======================================================================
+
+
+⚠️  TRAINING INTERROTTO!
+✅ Checkpoint salvato!
+
+======================================================================
+✅ TRAINING COMPLETATO!
+  📊 Episodi  : 680
+  🏆 Best     : 23 mele
+  💾 Modello  : C:\Users\carlo\Desktop\Progetti-AI\Snake\models\snake_model_final.pt
+  📝 Log      : C:\Users\carlo\Desktop\Progetti-AI\Snake\logs\train_20260313_095317.log
+======================================================================
+
