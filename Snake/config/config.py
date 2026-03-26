@@ -23,14 +23,14 @@ COLS      = 17
 CELL_SIZE = 40
 
 # 🧠 Iperparametri Training
-LEARNING_RATE  = 0.0001
+LEARNING_RATE  = 0.00005
 GAMMA          = 0.99
-EPSILON        = 0.0834          # riparte da 1.0: nuova architettura = nuovo training
+EPSILON        = 0.051          # riparte da 1.0: nuova architettura = nuovo training
 EPSILON_DECAY  = 0.9995
-EPSILON_MIN    = 0.01
+EPSILON_MIN    = 0.005
 BATCH_SIZE     = 512
 MEMORY_SIZE    = 200000
-EPISODES       = 50000
+EPISODES       = 100000
 TARGET_UPDATE  = 5
 
 # 🚀 Ambienti paralleli
